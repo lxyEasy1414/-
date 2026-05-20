@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>刘耀之专属减肥计划</title>
+    <!-- 引入样式库 + 图表库 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 自定义配置 -->
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { primary: '#22c55e', secondary: '#0ea5e9' } } }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-10">
+        <!-- 标题 -->
+        <h1 class="text-3xl md:text-4xl font-bold text-center text-primary mb-8">🏃‍♂️ 刘耀之专属减肥计划</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <!-- 左侧：基础设置 + 体重录入 -->
+            <div class="space-y-6">
+                <!-- 目标设置 -->
+                <div class="p-5 bg-blue-50 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-4 text-secondary">🎯 减肥目标设置</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block font-medium mb-1">目标体重 (kg)</label>
+                            <input type="number" id="targetWeight" step="0.1" min="0" class="w-full p-2 border rounded" placeholder="请输入目标体重">
+                        </div>
+                        <div>
+                            <label class="block font-medium mb-1">目标完成日期</label>
+                            <input type="date" id="targetDate" class="w-full p-2 border rounded">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 体重录入 -->
+                <div class="p-5 bg-green-50 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-4 text-primary">📝 每日体重录入</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block font-medium mb-1">记录日期</label>
+                            <input type="date" id="recordDate" class="w-full p-2 border rounded">
+                        </div>
+                        <div>
+                            <label class="block font-medium mb-1">当前体重 (kg)</label>
+                            <input type="number" id="currentWeight" step="0.1" min="0" class="w-full p-2 border rounded" placeholder="请输入体重">
+                        </div>
+                        <button onclick="saveWeightRecord()" class="w-full bg-primary text-white py-2 rounded hover:bg-green-600 transition">💾 保存体重记录</button>
+                    </div>
+                </div>
+
+                <!-- 数据管理 -->
+                <div class="p-5 bg-gray-50 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-4">💾 进度保存/导入</h2>
+                    <div class="flex gap-2">
+                        <button onclick="exportConfig()" class="flex-1 bg-secondary text-white py-2 rounded hover:bg-blue-600">导出配置文件</button>
+                        <label class="flex-1 bg-gray-600 text-white py-2 rounded text-center hover:bg-gray-700 cursor-pointer">
+                            导入配置文件
+                            <input type="file" id="importFile" accept=".json" class="hidden" onchange="importConfig(event)">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：减肥计划 + 统计图 -->
+            <div class="space-y-6">
+                <!-- 减肥计划 -->
+                <div class="p-5 bg-orange-50 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-4 text-orange-600">📋 专属减肥计划</h2>
+                    <div id="weightPlan" class="space-y-2 text-gray-700">
+                        请录入体重并设置目标，自动生成计划
+                    </div>
+                </div>
+
+                <!-- 体重统计图 -->
+                <div class="p-5 rounded-xl border h-80">
+                    <h2 class="text-xl font-semibold mb-4">📊 体重变化趋势图</h2>
+                    <canvas id="weightChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============== 全局数据 ==============
+        let weightChart = null; // 图表实例
+        let userData = {
+            name: "刘耀之",
+            targetWeight: 0,    // 目标体重
+            targetDate: "",     // 目标日期
+            weightRecords: []   // 体重记录 [ {date: '2025-01-01', weight: 80} ]
+        };
+
+        // ============== 初始化 ==============
+        window.onload = function () {
+            // 读取本地存储数据
+            const localData = localStorage.getItem('liuyaozhi_weight');
+            if (localData) userData = JSON.parse(localData);
+            
+            // 填充表单数据
+            document.getElementById('targetWeight').value = userData.targetWeight;
+            document.getElementById('targetDate').value = userData.targetDate;
+            document.getElementById('recordDate').value = new Date().toISOString().split('T')[0];
+            
+            // 渲染图表 + 生成计划
+            renderChart();
+            generatePlan();
+        };
+
+        // ============== 1. 保存体重记录 ==============
+        function saveWeightRecord() {
+            const date = document.getElementById('recordDate').value;
+            const weight = parseFloat(document.getElementById('currentWeight').value);
+            
+            // 验证输入
+            if (!date || isNaN(weight) || weight <= 0) {
+                alert('请填写正确的日期和体重！');
+                return;
+            }
+
+            // 同一天只保留最新记录
+            const index = userData.weightRecords.findIndex(item => item.date === date);
+            if (index >= 0) {
+                userData.weightRecords[index].weight = weight;
+            } else {
+                userData.weightRecords.push({ date, weight });
+            }
+
+            // 排序（按日期升序）
+            userData.weightRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            // 保存到本地 + 更新界面
+            saveToLocal();
+            renderChart();
+            generatePlan();
+            alert('体重记录保存成功！');
+        }
+
+        // ============== 2. 渲染体重统计图 ==============
+        function renderChart() {
+            const ctx = document.getElementById('weightChart').getContext('2d');
+            const records = userData.weightRecords;
+
+            // 无数据时清空图表
+            if (records.length === 0) {
+                if (weightChart) weightChart.destroy();
+                return;
+            }
+
+            // 提取坐标轴数据
+            const dates = records.map(item => item.date);
+            const weights = records.map(item => item.weight);
+
+            // 销毁旧图表
+            if (weightChart) weightChart.destroy();
+
+            // 创建新图表
+            weightChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '体重 (kg)',
+                        data: weights,
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: false } }
+                }
+            });
+        }
+
+        // ============== 3. 生成减肥计划 ==============
+        function generatePlan() {
+            const targetW = parseFloat(userData.targetWeight);
+            const targetD = userData.targetDate;
+            const records = userData.weightRecords;
+            const planDom = document.getElementById('weightPlan');
+
+            // 无数据提示
+            if (records.length === 0 || !targetW || !targetD) {
+                planDom.innerHTML = '请录入体重、设置目标体重和目标日期~';
+                return;
+            }
+
+            // 计算核心数据
+            const currentW = records[records.length - 1].weight; // 最新体重
+            const today = new Date();
+            const endDate = new Date(targetD);
+            const days = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)); // 剩余天数
+            const loseTotal = currentW - targetW; // 需减重总量
+
+            // 合法性判断
+            if (days <= 0) {
+                planDom.innerHTML = '❌ 目标日期不能早于今天！';
+                return;
+            }
+            if (loseTotal <= 0) {
+                planDom.innerHTML = '✅ 恭喜！你已经达到目标体重啦！';
+                return;
+            }
+
+            // 科学计算（健康减重：每周0.5-1kg）
+            const weekLose = (loseTotal / (days / 7)).toFixed(2);
+            const dayLose = (loseTotal / days).toFixed(2);
+
+            // 渲染计划
+            planDom.innerHTML = `
+                <p>👤 当前体重：<span class="font-bold">${currentW} kg</span></p>
+                <p>🎯 目标体重：<span class="font-bold">${targetW} kg</span></p>
+                <p>📅 剩余天数：<span class="font-bold">${days} 天</span></p>
+                <p>⚖️ 需减重量：<span class="font-bold text-red-500">${loseTotal.toFixed(1)} kg</span></p>
+                <hr class="my-2">
+                <p class="font-bold text-primary">📌 科学减重目标：</p>
+                <p>每日需减重：<span class="text-blue-600">${dayLose} kg</span></p>
+                <p>每周需减重：<span class="text-blue-600">${weekLose} kg</span></p>
+                <p class="text-sm text-gray-500 mt-2">💡 建议：控制饮食+适量运动，健康减重不反弹</p>
+            `;
+        }
+
+        // ============== 4. 导出配置文件 ==============
+        function exportConfig() {
+            const blob = new Blob([JSON.stringify(userData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `刘耀之减肥计划_${new Date().toLocaleDateString()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // ============== 5. 导入配置文件 ==============
+        function importConfig(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const importData = JSON.parse(e.target.result);
+                    // 验证数据格式
+                    if (!importData.weightRecords) {
+                        alert('导入文件格式错误！');
+                        return;
+                    }
+                    userData = importData;
+                    saveToLocal();
+                    location.reload(); // 刷新页面
+                    alert('进度导入成功！');
+                } catch (err) {
+                    alert('文件解析失败！');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // ============== 辅助：保存到本地存储 ==============
+        function saveToLocal() {
+            userData.targetWeight = document.getElementById('targetWeight').value;
+            userData.targetDate = document.getElementById('targetDate').value;
+            localStorage.setItem('liuyaozhi_weight', JSON.stringify(userData));
+        }
+    </script>
+</body>
+</html>
